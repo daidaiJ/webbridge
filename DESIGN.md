@@ -10,8 +10,9 @@ webbridge 是一个本地 MCP server，把用户正在使用的真实浏览器�
 
 运行时由四层组成：
 
-- **MCP server**（本仓库，Node）：工具 schema、目录、参数校验、action 映射、本地 reader/
-  capture/console/handoff/batch，以及 daemon 生命周期。
+- **MCP server**（本仓库，Node 默认；Go 可选）：工具 schema、目录、参数校验、action 映射、
+  本地 reader/capture/console/handoff/batch，以及 daemon 生命周期。两种实现共享
+  `~/.webbridge` 状态文件，可同时连接同一个 daemon。
 - **daemon**（上游 Browser Bridge 二进制，Go）：把 HTTP `/command` 转成扩展的 WebSocket
   `tool_call`，注入 session/tab 上下文，维护“任务 = session = 标签组”的语义。
 - **扩展**（本仓库构建的 MV3 包）：在浏览器内执行 CDP 和按需注入脚本。
@@ -38,8 +39,9 @@ Agent / MCP client
       │  MCP stdio
       ▼
 webbridge MCP server
-      ├─ tools.mjs / catalog.mjs / actions.mjs
-      ├─ daemon.mjs / lifecycle.mjs
+      ├─ Node: src/server.mjs / tools.mjs / catalog.mjs / actions.mjs
+      ├─ Go: cmd/webbridge-mcp + internal/catalog, daemon, app
+      ├─ daemon.mjs / lifecycle.mjs（Go 侧为 internal/daemon）
       ├─ reader.mjs / capture.mjs / console.mjs / handoff.mjs
       └─ loopback capture receiver (HTTP + WebSocket)
       │  HTTP /command
@@ -113,7 +115,8 @@ MCP 层保持薄：动作语义、标签和会话由 daemon 注入，浏览器�
 - `console`：按需注入 hook，上限 200 条；收集 log/info/warn/error/debug、未捕获错误和
   unhandled rejection。
 - `request_human`：登记 handoff，扩展通过 loopback WebSocket 立即弹窗；用户点 Continue 后
-  返回。socket 断开时用 30 秒 alarm 轮询 `/handoff` 兜底。支付确认留给真人。
+  返回。socket 断开时复用 `webbridge-reconcile` 的 30 秒 alarm 轮询 `/handoff` 兜底；socket
+  在线时只保留 5 分钟一次的看门狗 GET。支付确认留给真人。
 
 ## 8. 懒启动、单例与回收
 
@@ -176,7 +179,16 @@ MCP 层保持薄：动作语义、标签和会话由 daemon 注入，浏览器�
 - `test/e2e-edge.mjs`：真实 Edge + 扩展的完整工具面。
 - `test/e2e-pdf.mjs`：PDF 文本读取。
 
-## 13. 后续
+## 13. Go 前端
+
+`cmd/webbridge-mcp` 是 MCP 运行时的 Go 实现。工具目录由 Node 定义导出为
+`internal/catalog/catalog.json` 并嵌入二进制；页面脚本通过 `shared/page/embed.go` 嵌入。
+Go 与 Node 使用相同的启动锁、租约和所有权文件，迁移期可以混合运行。
+
+等效性测试、基准数据和风险见 [docs/GO.md](docs/GO.md)。扩展和页面脚本保持 JavaScript：
+MV3、`chrome.*`、DOM 和 CDP 执行环境无法由 Go 替代。
+
+## 14. 后续
 
 - Go MCP 前端：把协议层和 daemon 生命周期做成单个 Go 二进制，复用 `shared/page` 脚本；
   Node 版本保留完整本地能力。目前 daemon 已经是 Go，MCP 层仍是 Node。

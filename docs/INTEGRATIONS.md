@@ -1,7 +1,8 @@
 # 客户端接入
 
-`webbridge` 是一个本地 stdio MCP server。客户端只需要启动 `node <repo>/src/server.mjs`，
-并把 `WEBBRIDGE_*` 环境变量传进去。所有客户端共用同一个 daemon 和扩展。
+`webbridge` 是一个本地 stdio MCP server。默认入口是 `node <repo>/src/server.mjs`；也可以
+使用 Go 入口 `<repo>/dist/webbridge-mcp[.exe]`。两种实现共用同一个 daemon、扩展和
+`WEBBRIDGE_*` 环境变量。
 
 ## 通用配置
 
@@ -39,6 +40,35 @@ Windows 示例：
 
 把 `toolCallTimeoutMs` / `tool_timeout_sec` / 客户端等价设置保持在 620000 ms 以上，至少高于
 `request_human` 的默认 120 秒和最大 600 秒。
+
+### Go 入口（可选）
+
+先构建单文件二进制：
+
+```bash
+npm run go:build
+```
+
+然后把上面的 `command` / `args` 换成：
+
+```json
+{
+  "mcpServers": {
+    "webbridge": {
+      "command": "D:/tools/webbridge/dist/webbridge-mcp.exe",
+      "args": [],
+      "env": {
+        "WEBBRIDGE_SESSION": "agent",
+        "WEBBRIDGE_TOOLSET": "core"
+      }
+    }
+  }
+}
+```
+
+macOS/Linux 使用 `dist/webbridge-mcp`。Go 入口不需要 Node 运行时；扩展构建仍需要 Node。
+工具、参数校验、错误文本和捕获格式与 Node 入口一致，验证方法见
+[docs/GO.md](GO.md)。
 
 ## DeepSeek Harness（dsh）
 

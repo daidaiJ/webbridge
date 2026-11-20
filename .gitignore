@@ -1,5 +1,7 @@
 node_modules/
 dist/
+/webbridge-mcp
+/webbridge-mcp.exe
 extension/
 extension-slim/
 local/

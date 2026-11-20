@@ -178,8 +178,14 @@ export async function acquireStartLock(timeoutMs = 10_000) {
 
 export function daemonPid() {
   try {
-    const raw = JSON.parse(readFileSync(path.join(DAEMON_STATE_DIR, 'daemon.pid'), 'utf8'));
-    const pid = Number(raw?.pid);
+    const text = readFileSync(path.join(DAEMON_STATE_DIR, 'daemon.pid'), 'utf8').trim();
+    let pid = 0;
+    try {
+      pid = Number(JSON.parse(text)?.pid);
+    } catch {
+      // The daemon writes a bare PID; older builds may write JSON.
+      pid = Number(text);
+    }
     return Number.isInteger(pid) && pid > 0 ? pid : 0;
   } catch {
     return 0;

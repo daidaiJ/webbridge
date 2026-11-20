@@ -1,6 +1,6 @@
 # 工具参考
 
-webbridge 2.1.0，共 40 个浏览器工具。默认 `core` 档位列出 13 个，`WEBBRIDGE_TOOLSET=full` 直接列出 40 个。
+webbridge 2.1.1，共 40 个浏览器工具。默认 `core` 档位列出 13 个，`WEBBRIDGE_TOOLSET=full` 直接列出 40 个。
 
 ## 默认核心工具
 

@@ -96,6 +96,22 @@ MCP → HTTP → WebSocket → CDP 路径。网络和页面加载会显著影响
 8. **重复导航浪费页面加载。** 默认复用任务标签页；`newTab:true` 才保留旧页面。批量流程优先
    在已打开页面上操作。
 
+## 扩展空闲开销
+
+控制连接必须每 30 秒 ping 一次来维持 MV3 worker 存活，这是低延迟工具调用的固定成本。
+人工接管原先另外注册了一个 30 秒 alarm，即使 push WebSocket 在线也轮询 `/handoff`。现在复用
+`webbridge-reconcile`：
+
+| 项目 | 改前 | 改后 |
+|---|---:|---:|
+| 常驻 30 秒 alarm | 2 个（reconcile + handoff） | 1 个（reconcile） |
+| push 在线时 `/handoff` GET | 120 次/小时 | 12 次/小时（5 分钟看门狗） |
+| push 离线时 `/handoff` GET | 120 次/小时 | 120 次/小时（兜底不变） |
+| 控制通道 ping | 30 秒/次 | 30 秒/次（保活所需） |
+
+真实 Edge 实测（push 在线）：改前 95 秒内 6 次 alarm、3 次 GET；改后 65 秒内 2 次 alarm、
+0 次 GET。扩展启动后 `chrome.alarms.getAll()` 只剩 `webbridge-reconcile`。
+
 ## 使用建议
 
 - 读文章：`read_article`。

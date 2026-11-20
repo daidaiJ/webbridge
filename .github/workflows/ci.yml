@@ -25,6 +25,29 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      - run: npm ci
+      - run: npm run catalog:export
+      - run: git diff --exit-code -- internal/catalog/catalog.json
+      - run: go test ./...
+      - run: npm run go:build
+      - run: node test/go-parity.mjs
+
   package:
     runs-on: ubuntu-latest
     steps:

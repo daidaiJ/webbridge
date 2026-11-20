@@ -9,7 +9,7 @@
 Agent / MCP client
       │  MCP (stdio)
       ▼
-webbridge MCP server (Node, this repo)
+webbridge MCP server (Node default; Go optional, this repo)
       │  HTTP  POST http://127.0.0.1:10086/command
       ▼
 Browser Bridge daemon (upstream binary, Go)
@@ -197,6 +197,35 @@ node src/cli.mjs call read_page '{}' --session demo
 
 更完整的测试方法和数据见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 
+## Go MCP 前端（可选）
+
+MCP 运行时有一份功能等效的 Go 实现：`cmd/webbridge-mcp`。它直接读 daemon 的
+`/status`、`/command`，与 Node 版本共享工具目录、页面脚本和 `~/.webbridge` 生命周期文件；
+扩展和页面脚本仍保持 JavaScript。
+
+在同一台 Windows 机器、同一个假 daemon 上测得的固定开销：
+
+| 指标 | Node | Go |
+|---|---:|---:|
+| MCP 连接完成 | 469 ms | 44 ms |
+| 单次转发调用 p50 | 2.30 ms | 1.26 ms |
+| 空闲 RSS | 72 MB | 14 MB |
+| 分发 | Node + 95 个生产 npm 包 | 8.8 MB 单文件 |
+
+真实浏览器动作仍受页面加载和 CDP 限制，Go 主要降低进程启动、内存和本地转发开销。构建与
+验证：
+
+```bash
+npm run go:build          # dist/webbridge-mcp[.exe]，-s -w
+npm run go:test           # catalog、lifecycle、handoff、capture
+npm run test:go           # Node/Go 假 daemon 逐项对比
+npm run test:parity:live  # 真实 Edge + 扩展
+npm run bench:go          # 冷启动、调用延迟、RSS
+```
+
+完整等效性矩阵、风险和建议见 [docs/GO.md](docs/GO.md)。当前发布包仍以 Node 为默认入口；
+Go 二进制从源码构建。
+
 ## 安全边界
 
 - daemon 和收藏接收器只绑定 `127.0.0.1`；不要把 daemon 改成 `0.0.0.0`。
@@ -219,12 +248,15 @@ src/lifecycle.mjs       跨进程启动锁、租约、所有权标记
 src/reader.mjs          read_article：页面内 reader-mode 抽取
 src/capture.mjs         页面收藏 + loopback 接收器
 src/handoff.mjs         request_human 的状态和长轮询
-shared/page/            注入页面的自包含脚本（reader/extract/console）
+shared/page/            注入页面的自包含脚本（reader/extract/console/capture）
+cmd/webbridge-mcp/      Go MCP 入口（可选）
+internal/               Go catalog、daemon 生命周期、capture、handoff、app
+scripts/export-catalog.mjs  Node 工具定义导出为 Go catalog
 scripts/build-slim.mjs  从 vendor bundle 构建 extension/
 scripts/package-release.mjs  生成发布 zip
 skill/SKILL.md          Agent 使用规范
-docs/                   集成、工具、协议、性能文档
-test/                   无浏览器测试和真实 Edge E2E
+docs/                   集成、工具、协议、性能、Go 评估文档
+test/                   无浏览器测试、Node/Go 对比和真实 Edge E2E
 ```
 
 ## 构建与测试
@@ -234,11 +266,16 @@ test/                   无浏览器测试和真实 Edge E2E
 ```bash
 npm ci
 npm test                       # catalog, smoke, tools, capture, lifecycle
+npm run go:test                # Go catalog、lifecycle、handoff、capture
+npm run test:go                # Node/Go MCP 功能对比（假 daemon）
 npm run build:slim             # 构建 extension/
 npm run package:extension      # dist/browser-bridge-<version>.zip
 npm run package:release        # 发布包 dist/webbridge-<version>.zip
 npm run test:e2e               # 真实 Edge + 扩展（需要先退出已连接的浏览器）
 npm run test:e2e:pdf
+npm run test:parity:live       # 真实 Edge 上的 Node/Go 对比
+npm run test:shared            # Node/Go 共享一个 daemon 的生命周期
+npm run bench:go               # Go/Node 启动、调用、内存基准
 ```
 
 `npm test` 不需要浏览器。E2E 会启动独立的 Edge profile，并拒绝在已有浏览器连接 daemon 时
@@ -259,15 +296,22 @@ webbridge-<version>/
   LICENSE
   package.json
   package-lock.json
+  go.mod
+  go.sum
   skill/
   src/
   shared/
+  cmd/              # 可选 Go MCP 入口
+  internal/         # Go catalog、daemon 生命周期和本地工具
+  scripts/          # Go catalog 导出与构建脚本
+  test/             # Go 等效性测试与基准
   docs/
   extension/        # 可直接 Load unpacked
 ```
 
-使用发布包时，先在解压目录执行 `npm ci --omit=dev` 安装 MCP server 的生产依赖。发布包不包含
-本地 profiling 构建、`extension-slim/` 的调试补丁或任何测试产物。
+使用发布包时，先在解压目录执行 `npm ci --omit=dev` 安装 MCP server 的生产依赖；需要 Go
+入口时再执行 `npm run go:build`。发布包不包含本地 profiling 构建、`extension-slim/` 的调试
+补丁或浏览器 E2E 临时产物。
 
 ## 已知限制
 
@@ -276,12 +320,14 @@ webbridge-<version>/
   `scripts/build-slim.mjs` 的锚点。构建会在锚点变化时明确失败。
 - 默认 `core` 档位通过 `browser_call` 收敛长尾工具；需要逐工具权限时用
   `WEBBRIDGE_TOOLSET=full`。
-- 人工接管的即时推送依赖 MCP 进程内的 loopback WebSocket；socket 断开时扩展用 30 秒
-  alarm 轮询兜底。
+- 人工接管的即时推送依赖 MCP 进程内的 loopback WebSocket；socket 断开时扩展复用
+  `webbridge-reconcile` 的 30 秒 alarm 轮询兜底，socket 在线时只做 5 分钟看门狗。
 - 页面加载没有完成时调用 `snapshot` 可能超时；先 `wait` 一个选择器，或用
   `format:"aria"` 加 `max_chars`。
 - 上游 daemon 可能发送使用遥测（OS、架构、版本、session 名、工具名）；本仓库的扩展构建
   移除了扩展侧遥测，daemon 侧不在本仓库控制范围内。
+- Go 前端是可选原型；发布包默认仍用 Node 入口。`network`、PDF、上传、拖拽和完整人工接管
+  的 live parity 尚未覆盖。
 
 ## 设计来源与许可
 

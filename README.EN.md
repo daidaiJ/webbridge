@@ -10,7 +10,7 @@ Traffic stays on `127.0.0.1`.
 Agent / MCP client
       │  MCP (stdio)
       ▼
-webbridge MCP server (Node, this repo)
+webbridge MCP server (Node default; Go optional, this repo)
       │  HTTP  POST http://127.0.0.1:10086/command
       ▼
 Browser Bridge daemon (upstream binary, Go)
@@ -197,6 +197,35 @@ Takeaways:
 
 See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for methodology and more data.
 
+## Optional Go MCP front end
+
+`cmd/webbridge-mcp` is a functionally equivalent Go implementation of the MCP runtime. It talks
+to the same daemon, shares the generated tool catalog, page scripts, and `~/.webbridge` lifecycle
+files, and leaves the extension and page scripts in JavaScript.
+
+Fixed-overhead measurements on the same Windows machine with the same fake daemon:
+
+| Metric | Node | Go |
+|---|---:|---:|
+| MCP connect | 469 ms | 44 ms |
+| Forwarded call p50 | 2.30 ms | 1.26 ms |
+| Idle RSS | 72 MB | 14 MB |
+| Distribution | Node + 95 production npm packages | one 8.8 MB binary |
+
+Browser actions remain dominated by page load and CDP; Go reduces process startup, memory, and
+local forwarding cost. Build and verify:
+
+```bash
+npm run go:build          # dist/webbridge-mcp[.exe], stripped
+npm run go:test           # catalog, lifecycle, handoff, capture
+npm run test:go           # Node/Go parity against a fake daemon
+npm run test:parity:live  # real Edge + extension
+npm run bench:go          # startup, call latency, RSS
+```
+
+The full matrix, risks, and recommendation are in [docs/GO.md](docs/GO.md). The release bundle
+still uses the Node entry by default; the Go binary is built from source.
+
 ## Security
 
 - The daemon and capture receiver bind to `127.0.0.1` only. Do not use `0.0.0.0`.
@@ -220,12 +249,15 @@ src/lifecycle.mjs        Cross-process start lock, leases, ownership
 src/reader.mjs          read_article: in-page reader mode
 src/capture.mjs         Page capture + loopback receiver
 src/handoff.mjs         request_human state and long-poll
-shared/page/            Self-contained page scripts (reader/extract/console)
+shared/page/            Self-contained page scripts (reader/extract/console/capture)
+cmd/webbridge-mcp/      Optional Go MCP entry point
+internal/               Go catalog, daemon lifecycle, capture, handoff, app
+scripts/export-catalog.mjs  Export Node tool definitions for Go
 scripts/build-slim.mjs  Build extension/ from the vendor bundle
 scripts/package-release.mjs  Build the release zip
 skill/SKILL.md          Agent operating guide
-docs/                   Integrations, tools, protocol, performance
-test/                   Browser-free tests and real Edge E2E
+docs/                   Integrations, tools, protocol, performance, Go evaluation
+test/                   Browser-free tests, Node/Go parity, real Edge E2E
 ```
 
 ## Build and test
@@ -235,11 +267,16 @@ Requires Node.js 22+.
 ```bash
 npm ci
 npm test                       # catalog, smoke, tools, capture, lifecycle
+npm run go:test                # Go catalog, lifecycle, handoff, capture
+npm run test:go                # Node/Go MCP parity (fake daemon)
 npm run build:slim             # build extension/
 npm run package:extension      # dist/browser-bridge-<version>.zip
 npm run package:release        # dist/webbridge-<version>.zip
 npm run test:e2e               # real Edge + extension
 npm run test:e2e:pdf
+npm run test:parity:live       # Node/Go parity on real Edge
+npm run test:shared            # Node/Go share one daemon lifecycle
+npm run bench:go               # startup, call, memory benchmark
 ```
 
 `npm test` needs no browser. E2E starts its own Edge profile and refuses to run when another
@@ -260,15 +297,22 @@ webbridge-<version>/
   LICENSE
   package.json
   package-lock.json
+  go.mod
+  go.sum
   skill/
   src/
   shared/
+  cmd/              # optional Go MCP entry point
+  internal/         # Go catalog, daemon lifecycle, local tools
+  scripts/          # Go catalog export and build scripts
+  test/             # Go parity test and benchmark
   docs/
   extension/        # load unpacked
 ```
 
 Run `npm ci --omit=dev` in the extracted directory to install the MCP server's production
-dependencies. The release excludes the local profiling build, debug patches, and test artifacts.
+dependencies; run `npm run go:build` to build the optional Go entry point. The release excludes the
+local profiling build, debug patches, and browser E2E temporary artifacts.
 
 ## Known limits
 
@@ -278,13 +322,16 @@ dependencies. The release excludes the local profiling build, debug patches, and
   loudly if an anchor moves.
 - The default `core` profile collapses long-tail tools behind `browser_call`; use
   `WEBBRIDGE_TOOLSET=full` when per-tool approval matters.
-- Instant human-handoff delivery uses a loopback WebSocket in the MCP process; a 30-second
-  extension alarm is the fallback.
+- Instant human-handoff delivery uses a loopback WebSocket in the MCP process. When that socket
+  is down, the extension reuses the 30-second `webbridge-reconcile` alarm as a fallback; while it
+  is up, a 5-minute watchdog check is the only poll.
 - `snapshot` can time out while a page is still loading. Wait for a selector or use ARIA with
   `max_chars`.
 - The upstream daemon may send usage telemetry (OS, architecture, versions, session name, tool
   name). This repo's extension build removes extension-side telemetry; daemon-side telemetry is
   outside this repo.
+- The Go front end is optional; the release bundle still defaults to the Node entry. Live parity
+  for `network`, PDF, upload, drag, and the full human-handoff interaction is still pending.
 
 ## Credits and license
 

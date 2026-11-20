@@ -173,13 +173,16 @@ async function __wbCaptureActive(selected) {
 
 // --- human handoff prompt ------------------------------------------------
 // chrome.alarms is the documented way to wake a Manifest V3 worker: the
-// minimum period for a released extension is 30 s (0.5 min). Each alarm does
-// one short loopback fetch and exits, so the worker can go idle in between.
-// The daemon WebSocket already keeps it alive while connected; this avoids an
-// extra perpetual fetch chain when the browser is disconnected.
+// minimum period for a released extension is 30 s (0.5 min). The bridge
+// already owns a 30 s reconcile alarm, so reuse it rather than registering a
+// second timer. The push WebSocket delivers handoffs immediately; the alarm
+// polls only when that socket is down, with a slow watchdog while it is up.
 
-const __WB_HANDOFF_ALARM = 'webbridge-handoff';
-const __WB_HANDOFF_PERIOD_MIN = 0.5;
+const __WB_RECONCILE_ALARM = 'webbridge-reconcile';
+const __WB_RECONCILE_PERIOD_MIN = 0.5;
+const __WB_PUSH_WATCHDOG_TICKS = 10; // 5 min at the reconcile cadence
+let __wbReconcileTicks = 0;
+let __wbHandoffChecking = false;
 
 async function __wbSettings() {
   const stored = await chrome.storage.local.get(['capture_url', 'handoff_auto_open']);
@@ -252,19 +255,50 @@ async function __wbApplyHandoff(pending) {
 }
 
 async function __wbCheckHandoff() {
-  const { base } = await __wbSettings();
-  let pending = null;
+  if (__wbHandoffChecking) return true;
+  __wbHandoffChecking = true;
   try {
-    const response = await fetch(`${base}/handoff`, {
-      signal: AbortSignal.timeout(2500),
-      cache: 'no-store',
-    });
-    const data = await response.json();
-    pending = Array.isArray(data.pending) ? data.pending[0] || null : data.pending || null;
-  } catch {
-    return; // Receiver is off; keep the alarm for when it comes back.
+    const { base } = await __wbSettings();
+    let pending = null;
+    try {
+      const response = await fetch(`${base}/handoff`, {
+        signal: AbortSignal.timeout(2500),
+        cache: 'no-store',
+      });
+      const data = await response.json();
+      pending = Array.isArray(data.pending) ? data.pending[0] || null : data.pending || null;
+    } catch {
+      return false; // Receiver is off; the alarm retries on its next tick.
+    }
+    await __wbApplyHandoff(pending);
+    return true;
+  } finally {
+    __wbHandoffChecking = false;
   }
-  await __wbApplyHandoff(pending);
+}
+
+function __wbPushOpen() {
+  return Boolean(__wbPush && __wbPush.readyState === WebSocket.OPEN);
+}
+
+async function __wbHandoffTick() {
+  __wbReconcileTicks += 1;
+  if (__wbPushOpen()) {
+    // The socket is the primary channel. Probe the receiver occasionally so a
+    // silently dead socket cannot hide a pending handoff forever.
+    if (__wbReconcileTicks % __WB_PUSH_WATCHDOG_TICKS !== 0) return;
+    const alive = await __wbCheckHandoff();
+    if (!alive && __wbPush) {
+      try {
+        __wbPush.close();
+      } catch {
+        // Already closing.
+      }
+    }
+    return;
+  }
+  await __wbCheckHandoff();
+  await __wbEnsurePush();
 }
 
 // --- push channel --------------------------------------------------------
@@ -332,23 +366,20 @@ async function __wbEnsurePush() {
   };
 }
 
-async function __wbEnsureHandoffAlarm() {
-  const existing = await chrome.alarms.get(__WB_HANDOFF_ALARM);
+async function __wbEnsureReconcileAlarm() {
+  const existing = await chrome.alarms.get(__WB_RECONCILE_ALARM);
   if (!existing) {
-    chrome.alarms.create(__WB_HANDOFF_ALARM, { periodInMinutes: __WB_HANDOFF_PERIOD_MIN });
+    chrome.alarms.create(__WB_RECONCILE_ALARM, { periodInMinutes: __WB_RECONCILE_PERIOD_MIN });
   }
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== __WB_HANDOFF_ALARM) return;
-  __wbCheckHandoff();
-  __wbEnsurePush();
+  if (alarm.name !== __WB_RECONCILE_ALARM) return;
+  __wbHandoffTick();
 });
 
-chrome.runtime.onInstalled.addListener(__wbEnsureHandoffAlarm);
-chrome.runtime.onStartup.addListener(__wbEnsureHandoffAlarm);
-chrome.runtime.onInstalled.addListener(__wbEnsurePush);
-chrome.runtime.onStartup.addListener(__wbEnsurePush);
-__wbEnsureHandoffAlarm();
+chrome.runtime.onInstalled.addListener(__wbEnsureReconcileAlarm);
+chrome.runtime.onStartup.addListener(__wbEnsureReconcileAlarm);
+__wbEnsureReconcileAlarm();
 __wbCheckHandoff();
 __wbEnsurePush();

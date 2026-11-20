@@ -56,7 +56,7 @@ webbridge-<version>/
 
 ## 方式 B：源码
 
-要求 Node.js 22+。
+要求 Node.js 22+。使用可选的 Go MCP 入口时还需要 Go 1.25+；扩展构建仍需要 Node。
 
 ```bash
 git clone https://github.com/daidaiJ/webbridge.git

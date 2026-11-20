@@ -41,6 +41,8 @@ for (const file of [
   'CONTRIBUTING.md',
   'package.json',
   'package-lock.json',
+  'go.mod',
+  'go.sum',
 ]) {
   await addFile(file);
 }
@@ -53,6 +55,12 @@ await addDir('src');
 await addDir('shared');
 await addDir('docs');
 await addDir(extensionDir, 'extension');
+await addDir('cmd');
+await addDir('internal');
+await addFile('scripts/export-catalog.mjs', 'scripts/export-catalog.mjs');
+await addFile('scripts/go-build.mjs', 'scripts/go-build.mjs');
+await addFile('test/go-parity.mjs', 'test/go-parity.mjs');
+await addFile('test/bench-go.mjs', 'test/bench-go.mjs');
 
 const names = new Set(files.map((file) => file.name));
 for (const required of [
@@ -62,6 +70,10 @@ for (const required of [
   `${root}/docs/INTEGRATIONS.md`,
   `${root}/extension/manifest.json`,
   `${root}/extension/background.js`,
+  `${root}/cmd/webbridge-mcp/main.go`,
+  `${root}/internal/catalog/catalog.json`,
+  `${root}/go.mod`,
+  `${root}/scripts/go-build.mjs`,
 ]) {
   if (!names.has(required)) throw new Error(`release bundle is missing ${required}`);
 }
@@ -77,3 +89,4 @@ console.log(
 console.log(`  install:   cd ${root} && npm ci --omit=dev`);
 console.log(`  extension: load ${root}/extension/ as an unpacked extension`);
 console.log(`  skill:     copy ${root}/SKILL.md to the client's skill directory`);
+console.log(`  go:        cd ${root} && npm run go:build   # optional MCP entry point`);

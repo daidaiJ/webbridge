@@ -28,7 +28,7 @@ daemon 默认监听 `http://127.0.0.1:10086`。
   "running": true,
   "extension_connected": true,
   "extension_id": "...",
-  "extension_version": "2.1.0",
+  "extension_version": "2.1.1",
   "port": 10086,
   "version": "v2.0.36",
   "tab_id_arg": true,
@@ -84,26 +84,42 @@ MCP 层先 `GET /status`。连接失败时：
 
 ## 3. 扩展 WebSocket
 
-扩展连接 `ws://127.0.0.1:10086/ws`，消息是 JSON 文本帧。
+扩展连接 `ws://127.0.0.1:10086/ws`，使用 JSON 文本帧；一个浏览器只维护一条控制连接。
+URL 可带 `?client=<id>` 作为客户端标识。
+
+### 为什么是 WebSocket
+
+MV3 service worker 能直接使用的长连接只有 WebSocket。它在 loopback 上提供全双工、事件驱动的
+消息：daemon 可以主动下发工具调用，扩展可以立即回传结果；帧头只有 2–14 字节，没有 HTTP 请求头，
+也没有 SSE 需要的双通道和重连逻辑。
+
+| 方案 | 问题 |
+|---|---|
+| HTTP 长轮询 | 每个方向都要请求/响应，空闲时仍反复建连；工具调用延迟更高 |
+| SSE + POST | 事件流只能下行，上行还要逐条 POST；仍是两条通道 |
+| WebTransport / HTTP/3 | 浏览器和 daemon 支持不统一，loopback 上没有收益 |
+| Unix socket / 命名管道 | 浏览器 JS 不能直接访问 |
+| 原生消息 | 需要额外 host 清单和进程，和共享 daemon 的生命周期不匹配 |
+
+JSON 文本帧对 MCP 工具参数和结果足够直接。大结果（ARIA 快照、截图 base64）的瓶颈在内容本身，
+不在帧格式；二进制编码或压缩需要 daemon 端配合，收益低于调整扩展的轮询和 payload 大小，暂不引入。
 
 ### 握手
 
 扩展 → daemon：
 
 ```json
-{ "type": "hello", "version": "2.1.0", "extensionId": "..." }
+{ "type": "hello", "payload": { "extensionVersion": "2.1.1" } }
 ```
 
-daemon → 扩展：
-
-```json
-{ "type": "hello_ack", "session": "daemon" }
-```
+daemon 可能回 `hello_ack`；扩展当前忽略它的内容。
 
 ### 心跳
 
-任一侧可发 `{ "type": "ping" }`，对端回 `{ "type": "pong" }`。扩展 worker 被唤醒后重连；
-没有连接时 daemon 最多等约 34 秒。
+扩展通过 `chrome.alarms` 的 `webbridge-reconcile` 闹钟每 30 秒唤醒自己：链路在 45 秒内有流量时
+发送 `{ "type": "ping" }`，daemon 回 `{ "type": "pong" }`；45 秒无流量则断开重连。这个 30 秒节奏
+同时维持 MV3 worker 存活，是低延迟工具调用的前提；没有它，daemon 的工具调用在 worker 被挂起时
+无法送达。daemon 也可以主动发 `ping`，扩展回 `pong`。
 
 ### 工具调用
 
@@ -112,10 +128,8 @@ daemon → 扩展：
 ```json
 {
   "type": "tool_call",
-  "id": "call-1",
-  "action": "snapshot",
-  "args": {},
-  "session": "agent"
+  "requestId": "call-1",
+  "payload": { "name": "snapshot", "args": {} }
 }
 ```
 
@@ -124,25 +138,32 @@ daemon → 扩展：
 ```json
 {
   "type": "tool_result",
-  "id": "call-1",
-  "ok": true,
-  "data": { "...": "..." }
+  "responseToRequestId": "call-1",
+  "payload": { "data": { "...": "..." } }
 }
 ```
 
-或：
+失败时：
 
 ```json
 {
   "type": "tool_result",
-  "id": "call-1",
-  "ok": false,
-  "error": { "code": "element_not_found", "message": "..." }
+  "responseToRequestId": "call-1",
+  "payload": { "error": "element not found" }
 }
 ```
 
-daemon 负责 session、tabId、`_ownedTabIds` 和标签组上下文；扩展按 action 执行 CDP 或注入
-脚本。
+`payload.error` 是字符串；daemon 负责把它映射成 HTTP 错误码。扩展按 `payload.name` 执行
+CDP 或注入脚本；session、tabId、`_ownedTabIds` 和标签组上下文由 daemon 维护。
+
+### 资源占用
+
+- 控制连接：30 秒一次 ping（约 15 字节），用于保活和断线检测。
+- 推送连接：只在 MCP server 运行期间存在；服务端每 20 秒发 WebSocket ping 帧。
+- 人工接管回退：复用 `webbridge-reconcile` 闹钟，不再单独创建 30 秒闹钟。push 连接在线时每 5 分钟
+  只做一次看门狗 `/handoff` GET；push 离线时才恢复 30 秒轮询。
+- 大结果：ARIA 快照和截图是主要字节来源；协议层不做额外复制。压缩或二进制编码需要 daemon 支持，
+  当前版本不启用。
 
 ## 4. 收藏接收器
 
@@ -161,6 +182,11 @@ MCP 进程在 `127.0.0.1:10087` 启动一个 loopback HTTP/WebSocket 服务，�
 
 CORS 只回 `chrome-extension://`、`moz-extension://`、`safari-web-extension://` 来源；
 `/ws` 拒绝网页 Origin。请求体上限 4 MB。
+
+`/ws` 是扩展到 MCP server 的第二条 loopback WebSocket，用于人工接管推送：连接建立时服务端发
+`{ "type": "hello", "pending": [...] }`，状态变化时发 `{ "type": "handoff", "pending": [...] }`。
+服务端每 20 秒发 WebSocket ping 帧，浏览器自动回 pong。扩展优先使用这条连接；只有它不可用时，
+才在 `webbridge-reconcile` 闹钟里轮询 `/handoff`。push 在线期间只保留 5 分钟一次的看门狗 GET。
 
 ## 5. 错误码
 

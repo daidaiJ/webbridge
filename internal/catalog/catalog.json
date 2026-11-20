@@ -1,0 +1,1585 @@
+{
+  "version": "2.1.1",
+  "core": [
+    "status",
+    "start",
+    "session",
+    "navigate",
+    "snapshot",
+    "click",
+    "fill",
+    "wait",
+    "read_page",
+    "screenshot",
+    "close_session",
+    "browser_tools",
+    "browser_call"
+  ],
+  "workflow": [
+    "status: confirm running:true and extension_connected:true; if not, call start and ask the user to enable the extension.",
+    "session: name the task once (one task = one visible tab group).",
+    "navigate: open the URL; newTab:true keeps earlier pages.",
+    "snapshot: read the @e refs and choose a target.",
+    "click or fill: act on an @e ref (preferred) or a CSS selector.",
+    "wait: wait for a concrete result (text, text_gone, or selector).",
+    "snapshot, read_page, or screenshot: verify behavior, not just appearance.",
+    "close_session: close the tabs this task opened; borrowed tabs stay open."
+  ],
+  "hint": "Core tools are listed directly. browser_tools {query:\"...\"} searches; browser_tools {tool:\"name\"} returns its arguments and an example; browser_call {tool, args} runs a long-tail tool.",
+  "groups": [
+    {
+      "name": "tabs",
+      "about": "Find, borrow, activate, or close tabs",
+      "tools": [
+        "list_tabs",
+        "list_browser_tabs",
+        "find_tab",
+        "attach_tab",
+        "activate_tab",
+        "close_tab"
+      ]
+    },
+    {
+      "name": "read",
+      "about": "Reader mode, search, extract, console, network, and dialogs",
+      "tools": [
+        "read_article",
+        "find",
+        "extract",
+        "console",
+        "network",
+        "dialog"
+      ]
+    },
+    {
+      "name": "interact",
+      "about": "Real pointer, keyboard, select, hover, scroll, drag, and upload",
+      "tools": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "hover",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "output",
+      "about": "PDF, page capture, and highlights",
+      "tools": [
+        "save_as_pdf",
+        "capture_page",
+        "highlight"
+      ]
+    },
+    {
+      "name": "history",
+      "about": "Reload, go back, or go forward",
+      "tools": [
+        "history"
+      ]
+    },
+    {
+      "name": "script",
+      "about": "Page JavaScript and raw CDP",
+      "tools": [
+        "evaluate",
+        "cdp"
+      ]
+    },
+    {
+      "name": "flow",
+      "about": "Batch steps and human handoff",
+      "tools": [
+        "batch",
+        "request_human"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "navigate",
+      "description": "Open a URL in the user's real browser. Reuses the task tab by default; newTab:true keeps the current page open. Pass group_title on the first call so the task tabs are labeled together.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute URL including the scheme, e.g. https://example.com"
+          },
+          "newTab": {
+            "type": "boolean",
+            "description": "Open in a new tab instead of reusing the current task tab"
+          },
+          "group_title": {
+            "type": "string",
+            "description": "Human-readable tab-group label, set once per task"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": true,
+      "group": "core",
+      "summary": "Open a URL in the real browser.",
+      "signature": "navigate({ url: string, newTab?: boolean, group_title?: string })",
+      "related": []
+    },
+    {
+      "name": "activate_tab",
+      "description": "Bring the current task tab to the front so the person can see it. Set focus_window:true to also focus the browser window. Use before request_human and whenever the human needs to look at the page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "focus_window": {
+            "type": "boolean",
+            "description": "Also focus the browser window"
+          }
+        }
+      },
+      "timeoutMs": 30000,
+      "core": false,
+      "group": "tabs",
+      "summary": "Bring the task tab to the front; optionally focus the window.",
+      "signature": "activate_tab({ focus_window?: boolean })",
+      "related": [
+        "list_tabs",
+        "list_browser_tabs",
+        "find_tab",
+        "attach_tab",
+        "close_tab"
+      ]
+    },
+    {
+      "name": "history",
+      "description": "Reload the current tab, or move back or forward in its history. The bound is the tab's own history, so back at the first entry returns a daemon error.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "reload",
+              "back",
+              "forward"
+            ],
+            "description": "History operation"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "history",
+      "summary": "Reload, go back, or go forward in the current tab.",
+      "signature": "history({ action: \"reload\" | \"back\" | \"forward\" })",
+      "example": {
+        "tool": "history",
+        "args": {
+          "action": "back"
+        }
+      },
+      "related": []
+    },
+    {
+      "name": "find_tab",
+      "description": "Select a tab already owned by this task, matched by host. Use active:true to borrow the tab the user is currently viewing. If it fails, the page is not open in this task: call navigate with newTab:true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL or host keyword"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Borrow the foreground tab the user is viewing"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "core": false,
+      "group": "tabs",
+      "summary": "Reselect a tab this task owns, by host; active borrows the foreground tab.",
+      "signature": "find_tab({ url: string, active?: boolean })",
+      "example": {
+        "tool": "find_tab",
+        "args": {
+          "url": "example.com"
+        }
+      },
+      "related": [
+        "list_tabs",
+        "list_browser_tabs",
+        "attach_tab",
+        "activate_tab",
+        "close_tab"
+      ]
+    },
+    {
+      "name": "list_tabs",
+      "description": "List the tabs owned by this task, with tabId, url, title, active, groupTitle and borrowed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "core": false,
+      "group": "tabs",
+      "summary": "List the tabs this task owns.",
+      "signature": "list_tabs()",
+      "related": [
+        "list_browser_tabs",
+        "find_tab",
+        "attach_tab",
+        "activate_tab",
+        "close_tab"
+      ]
+    },
+    {
+      "name": "list_browser_tabs",
+      "description": "List every tab in the browser across windows, without attaching or focusing. Use before attach_tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "core": false,
+      "group": "tabs",
+      "summary": "List every browser tab without attaching.",
+      "signature": "list_browser_tabs()",
+      "related": [
+        "list_tabs",
+        "find_tab",
+        "attach_tab",
+        "activate_tab",
+        "close_tab"
+      ]
+    },
+    {
+      "name": "attach_tab",
+      "description": "Attach an existing tab (from list_browser_tabs) to this task. Borrowed tabs are spared by close_session. This does not focus the tab, so the user keeps their foreground page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tabId": {
+            "type": "number",
+            "description": "Chrome tab id"
+          }
+        },
+        "required": [
+          "tabId"
+        ]
+      },
+      "core": false,
+      "group": "tabs",
+      "summary": "Claim an existing tab as borrowed; it stays open after close_session.",
+      "signature": "attach_tab({ tabId: number })",
+      "example": {
+        "tool": "attach_tab",
+        "args": {
+          "tabId": 123
+        }
+      },
+      "related": [
+        "list_tabs",
+        "list_browser_tabs",
+        "find_tab",
+        "activate_tab",
+        "close_tab"
+      ]
+    },
+    {
+      "name": "close_tab",
+      "description": "Close the current task tab. Use only when closing that page is intended.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "core": false,
+      "group": "tabs",
+      "summary": "Close the current task tab.",
+      "signature": "close_tab()",
+      "related": [
+        "list_tabs",
+        "list_browser_tabs",
+        "find_tab",
+        "attach_tab",
+        "activate_tab"
+      ]
+    },
+    {
+      "name": "close_session",
+      "description": "Finish the task: close the tabs it opened. Borrowed user tabs stay open. Call when results are saved or the user asks to clean up. Returns the number closed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "timeoutMs": 60000,
+      "core": true,
+      "group": "core",
+      "summary": "Close the tabs this task opened.",
+      "signature": "close_session()",
+      "related": []
+    },
+    {
+      "name": "snapshot",
+      "description": "Page map: the accessibility tree with @e refs for clicking and filling. Call after navigate and after every page change; refs go stale. Default returns JSON {url, title, tree}; format:\"aria\" returns text with max_chars and cursor. On large or still-loading pages, use format:\"aria\" with max_chars, snapshot(ref), or wait for a selector first; JSON can be big or slow. Next: click or fill with a ref.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "Optional @e ref to narrow the snapshot to one subtree"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "aria"
+            ],
+            "description": "json (default) or aria text"
+          },
+          "max_chars": {
+            "type": "number",
+            "description": "ARIA text cap, 1-60000"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continuation cursor from a previous ARIA response"
+          }
+        }
+      },
+      "timeoutMs": 45000,
+      "core": true,
+      "group": "core",
+      "summary": "Read the page map with @e refs.",
+      "signature": "snapshot({ ref?: string, format?: \"json\" | \"aria\", max_chars?: number, cursor?: string })",
+      "related": []
+    },
+    {
+      "name": "read_article",
+      "description": "Reader mode: strip navigation, sidebars, comments, and ads, then return the article as clean Markdown with title, byline, and date. Use it to quote, summarize, or save an article without page chrome. On pages without an article container, it falls back to the winning text block.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "max_chars": {
+            "type": "number",
+            "description": "Markdown cap, 1000-200000, default 60000"
+          }
+        }
+      },
+      "timeoutMs": 90000,
+      "core": false,
+      "group": "read",
+      "summary": "Reader mode: strip page chrome and return clean article Markdown.",
+      "signature": "read_article({ max_chars?: number })",
+      "example": {
+        "tool": "read_article",
+        "args": {
+          "max_chars": 60000
+        }
+      },
+      "related": [
+        "find",
+        "extract",
+        "console",
+        "network",
+        "dialog"
+      ]
+    },
+    {
+      "name": "find",
+      "description": "Search the page text and return matching @e refs; narrow a large page with snapshot(ref).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text or phrase to find"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "core": false,
+      "group": "read",
+      "summary": "Search page text and return matching @e refs.",
+      "signature": "find({ query: string })",
+      "related": [
+        "read_article",
+        "extract",
+        "console",
+        "network",
+        "dialog"
+      ]
+    },
+    {
+      "name": "read_page",
+      "description": "Read the page's main text when you need content rather than structure. Keep max_chars near the amount you need; a much larger cap can add scan time. Use start to page through long documents. For clicking, use snapshot; for embedded documents, pass the frame handle from snapshot.frames.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "max_chars": {
+            "type": "number",
+            "description": "Maximum characters to return"
+          },
+          "start": {
+            "type": "number",
+            "description": "Character offset to continue from"
+          },
+          "frame": {
+            "type": "string",
+            "description": "Frame handle from snapshot.frames, e.g. #f1"
+          }
+        }
+      },
+      "timeoutMs": 90000,
+      "core": true,
+      "group": "core",
+      "summary": "Read the page text.",
+      "signature": "read_page({ max_chars?: number, start?: number, frame?: string })",
+      "related": []
+    },
+    {
+      "name": "wait",
+      "description": "Wait for a concrete page condition after an action: visible text, text that disappears, or a selector. Any one ends the wait; timeout_ms is 500-60000 and defaults to 10000. Set snapshot:true to get the page map in the same call. Next: snapshot or read_page to confirm.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Visible text to wait for (case-insensitive)"
+          },
+          "text_gone": {
+            "type": "string",
+            "description": "Visible text to wait to disappear"
+          },
+          "selector": {
+            "type": "string",
+            "description": "CSS selector to wait for"
+          },
+          "frame": {
+            "type": "string",
+            "description": "Wait for an embedded document, or pass \"any\""
+          },
+          "timeout_ms": {
+            "type": "number",
+            "description": "Timeout in ms, 500-60000"
+          },
+          "snapshot": {
+            "type": "boolean",
+            "description": "Include a snapshot when the condition matches"
+          }
+        }
+      },
+      "timeoutMs": 90000,
+      "core": true,
+      "group": "core",
+      "summary": "Wait for a concrete page condition.",
+      "signature": "wait({ text?: string, text_gone?: string, selector?: string, frame?: string, timeout_ms?: number, snapshot?: boolean })",
+      "related": []
+    },
+    {
+      "name": "click",
+      "description": "Click an element by @e ref from the latest snapshot (preferred) or a CSS selector. This is a synthetic click; if the page ignores it, use browser_tools to find mouse_click. Next: wait, then snapshot or read_page to verify.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": true,
+      "group": "core",
+      "summary": "Synthetic click on a ref or selector.",
+      "signature": "click({ selector: string })",
+      "related": []
+    },
+    {
+      "name": "mouse_click",
+      "description": "Real pointer click (mousedown/mouseup) at the element center. For sites that ignore synthetic clicks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector"
+          },
+          "focus_emulation": {
+            "type": "boolean",
+            "description": "Enable focus emulation first, required for background tabs"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "interact",
+      "summary": "Real pointer click; use when a synthetic click is ignored.",
+      "signature": "mouse_click({ selector: string, focus_emulation?: boolean })",
+      "example": {
+        "tool": "mouse_click",
+        "args": {
+          "selector": "@e4"
+        }
+      },
+      "related": [
+        "key_type",
+        "send_keys",
+        "hover",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "key_type",
+      "description": "Type text into the focused element as real keystrokes (Input.insertText). Focus the field first with mouse_click when click does not, then call this for search boxes with autocomplete, masked inputs, or editors that reject set values.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to insert"
+          },
+          "focus_emulation": {
+            "type": "boolean",
+            "description": "Enable focus emulation for a background tab"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": false,
+      "group": "interact",
+      "summary": "Type real keystrokes into the focused element.",
+      "signature": "key_type({ text: string, focus_emulation?: boolean })",
+      "example": {
+        "tool": "key_type",
+        "args": {
+          "text": "search phrase"
+        }
+      },
+      "related": [
+        "mouse_click",
+        "send_keys",
+        "hover",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "hover",
+      "description": "Move the pointer over an element to open hover menus, tooltips, and preview cards. Pairs with a following snapshot (or read_page) that sees the revealed content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector"
+          },
+          "focus_emulation": {
+            "type": "boolean",
+            "description": "Enable focus emulation for a background tab"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": false,
+      "group": "interact",
+      "summary": "Hover to open menus, tooltips, or preview cards.",
+      "signature": "hover({ selector: string, focus_emulation?: boolean })",
+      "example": {
+        "tool": "hover",
+        "args": {
+          "selector": "@e7"
+        }
+      },
+      "related": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "select_option",
+      "description": "Choose options in a native <select> by value or visible label, firing input and change events. For custom dropdown widgets, click to open the menu and click the option instead. With no value and no values, returns the available options.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector for the <select>"
+          },
+          "value": {
+            "type": "string",
+            "description": "One option value or visible label"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Several options for a multiple select"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": false,
+      "group": "interact",
+      "summary": "Choose native <select> options by value or label.",
+      "signature": "select_option({ selector: string, value?: string, values?: string[] })",
+      "example": {
+        "tool": "select_option",
+        "args": {
+          "selector": "#size",
+          "value": "m"
+        }
+      },
+      "related": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "hover",
+        "set_checked",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "set_checked",
+      "description": "Set a checkbox, radio, switch, or ARIA checkbox/switch to a given state, including indeterminate handling. Use when click would toggle an already-correct state or the control is a styled label.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector"
+          },
+          "checked": {
+            "type": "boolean",
+            "description": "Desired state, true or false"
+          }
+        },
+        "required": [
+          "selector",
+          "checked"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": false,
+      "group": "interact",
+      "summary": "Set a checkbox, radio, switch, or ARIA control.",
+      "signature": "set_checked({ selector: string, checked: boolean })",
+      "example": {
+        "tool": "set_checked",
+        "args": {
+          "selector": "#agree",
+          "checked": true
+        }
+      },
+      "related": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "hover",
+        "select_option",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "scroll",
+      "description": "Scroll to an element, to visible text, to the page top/bottom, or one screen up/down. Use it to load lazy content before snapshot, or to bring a target into view. When several inputs are given, target wins over text, and to/direction scroll the page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector to scroll into view"
+          },
+          "text": {
+            "type": "string",
+            "description": "Visible text to find and scroll to"
+          },
+          "to": {
+            "type": "string",
+            "enum": [
+              "top",
+              "bottom"
+            ],
+            "description": "Scroll the page to an edge"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "description": "Scroll one screen, default down"
+          }
+        }
+      },
+      "timeoutMs": 45000,
+      "core": false,
+      "group": "interact",
+      "summary": "Scroll to an element, text, page edge, or one screen.",
+      "signature": "scroll({ selector?: string, text?: string, to?: \"top\" | \"bottom\", direction?: \"up\" | \"down\" })",
+      "example": {
+        "tool": "scroll",
+        "args": {
+          "to": "bottom"
+        }
+      },
+      "related": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "hover",
+        "select_option",
+        "set_checked",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "drag",
+      "description": "Drag from one element to another using HTML5 drag events or a pointer sequence. The result states which mode ran; a pointer drag reports dispatched without verification, so confirm the outcome with snapshot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "@e ref or CSS selector for the drag source"
+          },
+          "to": {
+            "type": "string",
+            "description": "@e ref or CSS selector for the drop target"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "interact",
+      "summary": "Drag one element onto another; verify with snapshot.",
+      "signature": "drag({ from: string, to: string })",
+      "example": {
+        "tool": "drag",
+        "args": {
+          "from": "#card-1",
+          "to": "#done"
+        }
+      },
+      "related": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "hover",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "upload"
+      ]
+    },
+    {
+      "name": "fill",
+      "description": "Set an input, textarea, or rich-editor value in one step. Pass an @e ref from the latest snapshot or a CSS selector. For autocomplete, masked inputs, or keystroke-driven editors, use browser_tools to find key_type. Next: wait, then verify.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector"
+          },
+          "value": {
+            "type": "string",
+            "description": "Text to set"
+          }
+        },
+        "required": [
+          "selector",
+          "value"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": true,
+      "group": "core",
+      "summary": "Set an input or editor value.",
+      "signature": "fill({ selector: string, value: string })",
+      "related": []
+    },
+    {
+      "name": "send_keys",
+      "description": "Dispatch keyboard keys to the focused element: Enter, Escape, Tab, ArrowDown, or Mod+A / Control+C. Use focus_emulation for background tabs. Verify page state afterwards; dispatch alone does not prove submission.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "string",
+            "description": "Key sequence, e.g. \"Enter\", \"Escape\", \"Mod+A\", \"Shift+Tab Enter\""
+          },
+          "repeat": {
+            "type": "number",
+            "description": "Repeat count, 1-100"
+          },
+          "focus_emulation": {
+            "type": "boolean",
+            "description": "Enable focus emulation for a background tab"
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "interact",
+      "summary": "Send Enter, Escape, Tab, or Mod+A to the focused element.",
+      "signature": "send_keys({ keys: string, repeat?: number, focus_emulation?: boolean })",
+      "related": [
+        "mouse_click",
+        "key_type",
+        "hover",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "drag",
+        "upload"
+      ]
+    },
+    {
+      "name": "evaluate",
+      "description": "Run page JavaScript and return {type, value}. Wrap statements or async work in an IIFE: (() => {...})() or (async () => {...})(). Keep returned data compact.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "JavaScript source"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "timeoutMs": 30000,
+      "core": false,
+      "group": "script",
+      "summary": "Run page JavaScript; wrap statements in an IIFE.",
+      "signature": "evaluate({ code: string })",
+      "example": {
+        "tool": "evaluate",
+        "args": {
+          "code": "(() => document.title)()"
+        }
+      },
+      "related": [
+        "cdp"
+      ]
+    },
+    {
+      "name": "cdp",
+      "description": "Raw Chrome DevTools Protocol passthrough for actions the higher-level tools cannot express. Target.activateTarget is refused; use Page.bringToFront, or Emulation.setFocusEmulationEnabled for background input.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "description": "CDP method, e.g. Network.getResponseBody"
+          },
+          "params": {
+            "type": "object",
+            "description": "CDP parameters",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "script",
+      "summary": "Raw CDP passthrough; Target.activateTarget is refused.",
+      "signature": "cdp({ method: string, params?: object })",
+      "example": {
+        "tool": "cdp",
+        "args": {
+          "method": "Network.getResponseBody",
+          "params": {
+            "requestId": "123.4"
+          }
+        }
+      },
+      "related": [
+        "evaluate"
+      ]
+    },
+    {
+      "name": "screenshot",
+      "description": "Visual check of the tab or one element; returns the image plus a file path. Use it for layout and appearance; use snapshot or read_page for content. PNG by default; format:\"jpeg\" with quality for smaller captures.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "png",
+              "jpeg"
+            ],
+            "description": "png (default) or jpeg"
+          },
+          "quality": {
+            "type": "number",
+            "description": "JPEG quality 0-100"
+          },
+          "selector": {
+            "type": "string",
+            "description": "Optional @e ref or CSS selector for one element"
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional absolute output path; omit to use the daemon default directory"
+          }
+        }
+      },
+      "timeoutMs": 60000,
+      "core": true,
+      "group": "core",
+      "summary": "Visual check of the tab or one element.",
+      "signature": "screenshot({ format?: \"png\" | \"jpeg\", quality?: number, selector?: string, path?: string })",
+      "related": []
+    },
+    {
+      "name": "save_as_pdf",
+      "description": "Render the current tab to PDF and return the saved file path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "paper_format": {
+            "type": "string",
+            "enum": [
+              "letter",
+              "legal",
+              "a4",
+              "a3",
+              "tabloid"
+            ],
+            "description": "Paper size, default letter"
+          },
+          "landscape": {
+            "type": "boolean",
+            "description": "Landscape orientation"
+          },
+          "scale": {
+            "type": "number",
+            "description": "Scale 0.1-2, default 1"
+          },
+          "print_background": {
+            "type": "boolean",
+            "description": "Print background graphics, default true"
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional absolute output path"
+          }
+        }
+      },
+      "timeoutMs": 90000,
+      "core": false,
+      "group": "output",
+      "summary": "Render the current tab to PDF and return its path.",
+      "signature": "save_as_pdf({ paper_format?: \"letter\" | \"legal\" | \"a4\" | \"a3\" | \"tabloid\", landscape?: boolean, scale?: number, print_background?: boolean, path?: string })",
+      "example": {
+        "tool": "save_as_pdf",
+        "args": {
+          "path": "C:/tmp/page.pdf"
+        }
+      },
+      "related": [
+        "capture_page",
+        "highlight"
+      ]
+    },
+    {
+      "name": "highlight",
+      "description": "Draw a temporary box around an element in the real page so the person can see exactly where to look or click. Use it with request_human for sign-in fields, consent buttons, and any hand-off. action:\"show\" returns a highlight_id; action:\"clear\" removes it. Highlights expire after duration_ms (default 30 s, max 120 s).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "show",
+              "clear"
+            ],
+            "description": "show (default) or clear"
+          },
+          "selector": {
+            "type": "string",
+            "description": "@e ref or CSS selector to highlight"
+          },
+          "highlight_id": {
+            "type": "string",
+            "description": "Highlight to renew or clear"
+          },
+          "duration_ms": {
+            "type": "number",
+            "description": "Lifetime in ms, 1000-120000, default 30000"
+          }
+        }
+      },
+      "timeoutMs": 30000,
+      "core": false,
+      "group": "output",
+      "summary": "Draw a temporary box around an element for the user.",
+      "signature": "highlight({ action?: \"show\" | \"clear\", selector?: string, highlight_id?: string, duration_ms?: number })",
+      "example": {
+        "tool": "highlight",
+        "args": {
+          "selector": "@e9",
+          "duration_ms": 10000
+        }
+      },
+      "related": [
+        "save_as_pdf",
+        "capture_page"
+      ]
+    },
+    {
+      "name": "capture_page",
+      "description": "Bookmark the current tab as agent-friendly Markdown with YAML frontmatter (url, title, captured_at, tags) plus a links section. One bounded DOM walk, no extra network traffic. Writes <YYYYMMDD-HHmmss>-<slug>.md and appends a line to index.jsonl in the capture directory (WEBBRIDGE_CAPTURE_DIR or ~/.webbridge/captures).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "Absolute output directory; overrides WEBBRIDGE_CAPTURE_DIR"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags stored in the frontmatter and index line"
+          },
+          "screenshot": {
+            "type": "boolean",
+            "description": "Also save a PNG next to the Markdown; off by default for speed"
+          },
+          "max_chars": {
+            "type": "number",
+            "description": "Text cap, 1000-400000, default 120000"
+          }
+        }
+      },
+      "timeoutMs": 90000,
+      "core": false,
+      "group": "output",
+      "summary": "Save the tab as Markdown with frontmatter and links.",
+      "signature": "capture_page({ dir?: string, tags?: string[], screenshot?: boolean, max_chars?: number })",
+      "example": {
+        "tool": "capture_page",
+        "args": {
+          "tags": [
+            "research"
+          ]
+        }
+      },
+      "related": [
+        "save_as_pdf",
+        "highlight"
+      ]
+    },
+    {
+      "name": "extract",
+      "description": "Extract structured data with CSS selectors: matching elements become JSON objects. Without fields, each item returns text plus href for links, src for images, or value for inputs. With fields, each item returns only the named sub-selectors/attributes. Use for tables, cards, lists and search results; cheaper than a full snapshot when you know the markup.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "CSS selector for the repeated items, e.g. \"table tbody tr\""
+          },
+          "fields": {
+            "type": "array",
+            "description": "Optional per-item fields, up to 12",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Output key"
+                },
+                "selector": {
+                  "type": "string",
+                  "description": "Selector inside each item; omit for the item itself"
+                },
+                "attr": {
+                  "type": "string",
+                  "description": "Read this attribute instead of text"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "max_items": {
+            "type": "number",
+            "description": "Maximum items to return, 1-500, default 50"
+          },
+          "include_empty": {
+            "type": "boolean",
+            "description": "Keep items whose fields are all empty"
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "read",
+      "summary": "Extract repeated elements as JSON with optional fields.",
+      "signature": "extract({ selector: string, fields?: object[], max_items?: number, include_empty?: boolean })",
+      "example": {
+        "tool": "extract",
+        "args": {
+          "selector": "#rows tr",
+          "fields": [
+            {
+              "name": "name",
+              "selector": ".name"
+            }
+          ]
+        }
+      },
+      "related": [
+        "read_article",
+        "find",
+        "console",
+        "network",
+        "dialog"
+      ]
+    },
+    {
+      "name": "console",
+      "description": "Read console output and page errors for the current tab. Call action:\"start\" before the interaction, then action:\"read\" (optionally clear:true) to collect log/info/warn/error/debug plus uncaught errors and unhandled rejections. Bounded to 200 entries; action:\"stop\" removes the hook.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "start",
+              "read",
+              "stop"
+            ],
+            "description": "start, read (default), or stop"
+          },
+          "clear": {
+            "type": "boolean",
+            "description": "With read, clear messages after returning them"
+          }
+        }
+      },
+      "timeoutMs": 30000,
+      "core": false,
+      "group": "read",
+      "summary": "Start, read, or stop console and error capture.",
+      "signature": "console({ action?: \"start\" | \"read\" | \"stop\", clear?: boolean })",
+      "example": {
+        "tool": "console",
+        "args": {
+          "action": "start"
+        }
+      },
+      "related": [
+        "read_article",
+        "find",
+        "extract",
+        "network",
+        "dialog"
+      ]
+    },
+    {
+      "name": "dialog",
+      "description": "Inspect or answer a JavaScript dialog (alert/confirm/prompt). A blocking dialog stalls other commands, so use action:\"accept\" or \"dismiss\" when one is open. text supplies the prompt answer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "accept",
+              "dismiss"
+            ],
+            "description": "Dialog operation"
+          },
+          "text": {
+            "type": "string",
+            "description": "Prompt answer for accept, when the dialog asks for text"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "timeoutMs": 30000,
+      "core": false,
+      "group": "read",
+      "summary": "Inspect or answer an alert, confirm, or prompt.",
+      "signature": "dialog({ action: \"status\" | \"accept\" | \"dismiss\", text?: string })",
+      "example": {
+        "tool": "dialog",
+        "args": {
+          "action": "accept"
+        }
+      },
+      "related": [
+        "read_article",
+        "find",
+        "extract",
+        "console",
+        "network"
+      ]
+    },
+    {
+      "name": "upload",
+      "description": "Set files on a file input. Files must be absolute local paths readable by the daemon.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "CSS selector for the input[type=file]"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Absolute file paths"
+          }
+        },
+        "required": [
+          "selector",
+          "files"
+        ]
+      },
+      "timeoutMs": 60000,
+      "core": false,
+      "group": "interact",
+      "summary": "Set absolute files on a file input.",
+      "signature": "upload({ selector: string, files: string[] })",
+      "example": {
+        "tool": "upload",
+        "args": {
+          "selector": "input[type=file]",
+          "files": [
+            "C:/path/file.pdf"
+          ]
+        }
+      },
+      "related": [
+        "mouse_click",
+        "key_type",
+        "send_keys",
+        "hover",
+        "select_option",
+        "set_checked",
+        "scroll",
+        "drag"
+      ]
+    },
+    {
+      "name": "network",
+      "description": "Capture network requests for the current tab. cmd:\"start\" begins capture, \"list\" lists requests (filter by URL substring), \"detail\" returns headers/body for one requestId, \"stop\" ends capture (and drops response bodies, so read details first).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cmd": {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop",
+              "list",
+              "detail"
+            ],
+            "description": "Operation"
+          },
+          "filter": {
+            "type": "string",
+            "description": "URL substring filter for list"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Request id for detail"
+          }
+        },
+        "required": [
+          "cmd"
+        ]
+      },
+      "timeoutMs": 45000,
+      "core": false,
+      "group": "read",
+      "summary": "Start, list, detail, or stop network capture.",
+      "signature": "network({ cmd: \"start\" | \"stop\" | \"list\" | \"detail\", filter?: string, requestId?: string })",
+      "example": {
+        "tool": "network",
+        "args": {
+          "cmd": "start"
+        }
+      },
+      "related": [
+        "read_article",
+        "find",
+        "extract",
+        "console",
+        "dialog"
+      ]
+    },
+    {
+      "name": "status",
+      "description": "Preflight. Report whether the local daemon and the browser extension are connected, plus the active toolset. Call this first. Browser tools start the daemon lazily when needed; if extension_connected is false, ask the user to enable the extension, then retry once.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "core": true,
+      "group": "core",
+      "summary": "Check the daemon and extension before starting.",
+      "signature": "status()",
+      "related": []
+    },
+    {
+      "name": "start",
+      "description": "Start the local daemon if it is not running, then report status. Safe to call repeatedly. Browser tools also do this lazily; start is only for prewarming.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "timeoutMs": 60000,
+      "core": true,
+      "group": "core",
+      "summary": "Start the daemon if it is not running.",
+      "signature": "start()",
+      "related": []
+    },
+    {
+      "name": "session",
+      "description": "Name this task; its pages form one visible tab group. Call once at the start of a multi-step task (e.g. \"compare-phones\"). Skip it for a single quick page.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Session name for this task"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "core": true,
+      "group": "core",
+      "summary": "Name the task and its tab group.",
+      "signature": "session({ name: string })",
+      "related": []
+    },
+    {
+      "name": "batch",
+      "description": "Run several tool calls in one round-trip and return per-step results. Use for tight sequences (fill → click → wait) and flash-sale timing, where extra calls add latency. Steps stop at the first failure unless stop_on_error is false. Images are not returned; use the screenshot tool directly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "description": "Up to 40 steps, executed in order",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "description": "Tool name, e.g. click"
+                },
+                "args": {
+                  "type": "object",
+                  "description": "Arguments for that tool",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "tool"
+              ]
+            }
+          },
+          "stop_on_error": {
+            "type": "boolean",
+            "description": "Stop after the first failure, default true"
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      },
+      "timeoutMs": 300000,
+      "core": false,
+      "group": "flow",
+      "summary": "Run up to 40 steps in one round-trip; stops at the first error.",
+      "signature": "batch({ steps: object[], stop_on_error?: boolean })",
+      "example": {
+        "tool": "batch",
+        "args": {
+          "steps": [
+            {
+              "tool": "fill",
+              "args": {
+                "selector": "#q",
+                "value": "grok"
+              }
+            },
+            {
+              "tool": "click",
+              "args": {
+                "selector": "#go"
+              }
+            }
+          ]
+        }
+      },
+      "related": [
+        "request_human"
+      ]
+    },
+    {
+      "name": "request_human",
+      "description": "Hand control back to the person and wait: sign-in, 2FA, captcha, consent, or any step that needs their judgment. The extension opens a small prompt with the reason; the call returns when they press Continue or the timeout passes, then re-check the page. Never use this to confirm payment; stop at the order page and let the person finish.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "One short line shown to the person"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "What they should do, in their language"
+          },
+          "timeout_ms": {
+            "type": "number",
+            "description": "Wait limit in ms, 5000-600000, default 120000"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "timeoutMs": 620000,
+      "core": false,
+      "group": "flow",
+      "summary": "Hand control to the person for sign-in, 2FA, captcha, or a decision.",
+      "signature": "request_human({ reason: string, instructions?: string, timeout_ms?: number })",
+      "example": {
+        "tool": "request_human",
+        "args": {
+          "reason": "Sign in to continue",
+          "instructions": "Finish the login, then press Continue."
+        }
+      },
+      "related": [
+        "batch"
+      ]
+    },
+    {
+      "name": "browser_tools",
+      "description": "The rest of the browser suite: tabs, extraction, network, console, files, PDF, JavaScript, batch, and human handoff. No arguments returns the workflow and tool groups; query searches names and descriptions; tool returns one tool's full arguments and an example. Use it before browser_call.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Words to match in tool names or descriptions"
+          },
+          "tool": {
+            "type": "string",
+            "description": "Exact tool name, e.g. \"extract\""
+          }
+        }
+      },
+      "core": true,
+      "group": "meta",
+      "summary": "The rest of the browser suite: tabs, extraction, network, console, files, PDF, JavaScript, batch, and human handoff.",
+      "signature": "browser_tools({ query?: string, tool?: string })"
+    },
+    {
+      "name": "browser_call",
+      "description": "Run a long-tail tool by name with its argument object. Call browser_tools {tool} first to get the arguments. Core tools are listed directly; prefer them.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "description": "Tool name from browser_tools"
+          },
+          "args": {
+            "type": "object",
+            "description": "Arguments for that tool",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "tool"
+        ]
+      },
+      "core": true,
+      "group": "meta",
+      "summary": "Run a long-tail tool by name with its argument object.",
+      "signature": "browser_call({ tool: string, args?: object })"
+    }
+  ]
+}
