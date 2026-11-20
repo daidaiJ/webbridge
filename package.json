@@ -1,0 +1,59 @@
+{
+  "name": "webbridge",
+  "version": "2.1.0",
+  "private": true,
+  "description": "MCP server that gives agents control of the user's real browser through a local bridge daemon — real tabs, logins, and window state.",
+  "type": "module",
+  "bin": {
+    "webbridge": "src/cli.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/daidaiJ/webbridge.git"
+  },
+  "homepage": "https://github.com/daidaiJ/webbridge#readme",
+  "bugs": {
+    "url": "https://github.com/daidaiJ/webbridge/issues"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "browser-automation",
+    "browser-extension",
+    "ai-agent",
+    "cdp",
+    "real-browser",
+    "nodejs"
+  ],
+  "author": "daidaiJ",
+  "scripts": {
+    "mcp": "node src/server.mjs",
+    "status": "node src/cli.mjs status",
+    "test": "node test/catalog.mjs && node test/smoke.mjs && node test/tools.mjs && node test/capture.mjs && node test/lifecycle.mjs",
+    "test:e2e": "node test/e2e-edge.mjs",
+    "test:e2e:pdf": "node test/e2e-pdf.mjs",
+    "catalog": "node test/catalog.mjs",
+    "smoke": "node test/smoke.mjs",
+    "capture": "node test/capture.mjs",
+    "e2e": "node test/e2e-edge.mjs",
+    "e2e:pdf": "node test/e2e-pdf.mjs",
+    "build:slim": "node scripts/build-slim.mjs",
+    "package:extension": "node scripts/build-slim.mjs && node scripts/package-extension.mjs",
+    "package:release": "node scripts/build-slim.mjs && node scripts/package-extension.mjs && node scripts/package-release.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  },
+  "devDependencies": {
+    "@babel/generator": "^8.1.2",
+    "@babel/parser": "^8.1.2",
+    "@babel/traverse": "^8.1.2",
+    "playwright": "^1.65.0",
+    "terser": "^5.51.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

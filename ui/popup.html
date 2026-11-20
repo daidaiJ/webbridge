@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Browser Bridge</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --fg: #111827;
+      --muted: #6b7280;
+      --line: #d1d5db;
+      --accent: #2563eb;
+      --warn: #b45309;
+      --ok: #15803d;
+      --warn-bg: rgba(217, 155, 30, 0.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111827;
+        --fg: #f3f4f6;
+        --muted: #9ca3af;
+        --line: #374151;
+        --accent: #60a5fa;
+        --warn: #fbbf24;
+        --ok: #4ade80;
+        --warn-bg: rgba(251, 191, 36, 0.14);
+      }
+    }
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 14px 14px 12px;
+      font: 13px/1.45 system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    h1 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.ok { background: var(--ok); }
+    .dot.warn { background: var(--warn); }
+    .row { display: flex; justify-content: space-between; gap: 8px; margin: 4px 0; }
+    .row span:first-child { color: var(--muted); }
+    code, input { font: 12px ui-monospace, monospace; }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 6px;
+      margin: 8px 0;
+      color: var(--fg);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+    .buttons { display: flex; gap: 6px; }
+    button {
+      flex: 1;
+      padding: 6px 8px;
+      cursor: pointer;
+      color: var(--fg);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      font: inherit;
+    }
+    button.primary { font-weight: 600; border-color: var(--accent); color: var(--accent); }
+    button:disabled { cursor: progress; opacity: 0.6; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .hint { color: var(--muted); margin-top: 10px; font-size: 12px; }
+    .hint a { color: inherit; }
+    #note { min-height: 16px; color: var(--warn); margin-top: 6px; font-size: 12px; }
+    #captures, #activity { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #capture { width: 100%; margin: 6px 0 2px; padding: 6px 8px; }
+    #handoff {
+      margin: 8px 0 4px;
+      padding: 8px;
+      border: 1px solid var(--warn);
+      border-radius: 6px;
+      background: var(--warn-bg);
+    }
+    #handoff-reason { font-weight: 600; }
+    #handoff-instructions { color: var(--muted); font-size: 12px; margin: 4px 0 6px; white-space: pre-wrap; }
+    #handoff-resume { width: 100%; }
+  </style>
+</head>
+<body>
+  <h1><i id="dot" class="dot" aria-hidden="true"></i>Browser Bridge</h1>
+  <section id="handoff" hidden aria-label="Human handoff">
+    <div id="handoff-reason"></div>
+    <div id="handoff-instructions"></div>
+    <button id="handoff-resume" type="button" class="primary">I'm done — continue</button>
+  </section>
+  <div class="row"><span>Daemon</span><span id="daemon">checking…</span></div>
+  <div class="row"><span>This browser</span><span id="link">checking…</span></div>
+  <div class="row"><span>Version</span><span id="version">–</span></div>
+  <div class="row"><span>Captures</span><span id="captures" title="">–</span></div>
+  <div class="row"><span>Last action</span><span id="activity" title="">–</span></div>
+  <input id="url" spellcheck="false" aria-label="Daemon WebSocket URL">
+  <button id="capture" type="button">Capture this page</button>
+  <div class="buttons">
+    <button id="save" type="button" class="primary">Save &amp; connect</button>
+    <button id="disconnect" type="button">Disconnect</button>
+  </div>
+  <div id="note" role="status" aria-live="polite"></div>
+  <p class="hint">The daemon listens on <code>127.0.0.1:10086</code>; start it with
+    <code>node src/cli.mjs start</code>. Pages are read over CDP in this profile.</p>
+  <script src="popup.js"></script>
+</body>
+</html>
